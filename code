@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Soil Moisture Monitor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root {
+    --bg: #0f1410;
+    --bg2: #161d18;
+    --bg3: #1e2820;
+    --card: #1a2219;
+    --border: #2a3a2c;
+    --green: #4ade80;
+    --green-dim: #22c55e;
+    --green-dark: #166534;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --blue: #60a5fa;
+    --text: #e8f0e9;
+    --text2: #8fa690;
+    --text3: #4a5e4c;
+    --font: 'Courier New', 'Lucida Console', monospace;
+    --font2: Georgia, 'Times New Roman', serif;
+    --radius: 6px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+    padding: 24px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .logo-icon {
+    width: 42px; height: 42px;
+    background: var(--green-dark);
+    border: 1px solid var(--green-dim);
+    border-radius: var(--radius);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .logo-icon svg { width: 24px; height: 24px; }
+  h1 {
+    font-family: var(--font2);
+    font-size: 20px;
+    font-weight: normal;
+    letter-spacing: 0.5px;
+    color: var(--green);
+  }
+  h1 span { font-size: 12px; color: var(--text2); display: block; margin-top: 2px; font-family: var(--font); }
+  .conn-area { display: flex; align-items: center; gap: 12px; }
+  .baud-select {
+    background: var(--bg3); border: 1px solid var(--border);
+    color: var(--text2); padding: 7px 10px; border-radius: var(--radius);
+    font-family: var(--font); font-size: 12px; cursor: pointer;
+  }
+  .btn {
+    padding: 8px 18px;
+    border-radius: var(--radius);
+    font-family: var(--font);
+    font-size: 12px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    transition: all 0.15s;
+    letter-spacing: 0.5px;
+  }
+  .btn-connect {
+    background: var(--green-dark);
+    border-color: var(--green-dim);
+    color: var(--green);
+  }
+  .btn-connect:hover { background: #1a4a2a; }
+  .btn-connect.connected {
+    background: #3a1010; border-color: #7a3030; color: var(--red);
+  }
+  .btn-sim {
+    background: var(--bg3); color: var(--text2);
+  }
+  .btn-sim.active { background: #1a2a3a; border-color: #3060a0; color: var(--blue); }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text3); display: inline-block;
+    margin-right: 6px; transition: background 0.3s;
+  }
+  .status-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 2s infinite; }
+  .status-dot.simulating { background: var(--blue); box-shadow: 0 0 6px var(--blue); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+  .grid-top {
+    display: grid;
+    grid-template-columns: 280px 1fr 220px;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  @media(max-width:900px){ .grid-top{ grid-template-columns: 1fr 1fr; } }
+  @media(max-width:600px){ .grid-top{ grid-template-columns: 1fr; } }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+  }
+  .card-label {
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    color: var(--text3);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .big-val {
+    font-size: 56px;
+    font-weight: bold;
+    line-height: 1;
+    color: var(--green);
+    transition: color 0.4s;
+    font-family: 'Courier New', monospace;
+  }
+  .big-val.dry { color: var(--red); }
+  .big-val.low { color: var(--amber); }
+  .big-val.wet { color: var(--blue); }
+  .big-unit { font-size: 22px; color: var(--text2); margin-left: 4px; }
+  .raw-val { font-size: 11px; color: var(--text3); margin-top: 6px; }
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 14px;
+    border-radius: 40px;
+    font-size: 12px;
+    letter-spacing: 1px;
+    margin-top: 10px;
+    border: 1px solid transparent;
+    transition: all 0.4s;
+  }
+  .badge-optimal { background: #0f2e1a; border-color: #1a6632; color: var(--green); }
+  .badge-low     { background: #2e1f0f; border-color: #6b4a0f; color: var(--amber); }
+  .badge-dry     { background: #2e0f0f; border-color: #6b1f1f; color: var(--red); }
+  .badge-wet     { background: #0f1a2e; border-color: #1f3d6b; color: var(--blue); }
+  .badge-saturated { background: #0a1528; border-color: #1040a0; color: #93c5fd; }
+  .badge-idle    { background: var(--bg3); border-color: var(--border); color: var(--text3); }
+  .gauge-wrap { position: relative; width: 100%; aspect-ratio: 1.8; overflow: hidden; }
+  .gauge-wrap canvas { position: absolute; top: 0; left: 0; width: 100% !important; height: 100% !important; }
+  .gauge-center {
+    position: absolute; bottom: 0; left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+  }
+  .gauge-center .gval { font-size: 14px; color: var(--text2); }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .stat-item { }
+  .stat-label { font-size: 10px; letter-spacing: 1px; color: var(--text3); text-transform: uppercase; }
+  .stat-val { font-size: 18px; color: var(--text); margin-top: 2px; }
+  .stat-val.pos { color: var(--green); }
+  .stat-val.neg { color: var(--red); }
+  .stat-val.neu { color: var(--amber); }
+  .trend-arrow { font-size: 14px; margin-left: 4px; }
+  .chart-wrap { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-bottom: 16px; }
+  .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .chart-title { font-size: 10px; letter-spacing: 1.5px; color: var(--text3); text-transform: uppercase; }
+  .chart-meta { font-size: 11px; color: var(--text3); }
+  .bottom-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media(max-width:700px){ .bottom-row{ grid-template-columns: 1fr; } }
+  .evap-bars { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .evap-row { display: flex; align-items: center; gap: 10px; }
+  .evap-label { font-size: 10px; color: var(--text2); width: 50px; text-align: right; flex-shrink: 0; }
+  .evap-bar-bg { flex: 1; height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
+  .evap-bar-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+  .evap-val { font-size: 10px; color: var(--text2); width: 60px; flex-shrink: 0; }
+  .log-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    font-size: 11px;
+    color: var(--text2);
+    height: 140px;
+    overflow-y: auto;
+    font-family: var(--font);
+    line-height: 1.6;
+    margin-top: 8px;
+  }
+  .log-line { border-bottom: 1px solid #1a221a; padding: 2px 0; }
+  .log-line .ts { color: var(--text3); margin-right: 8px; }
+  .log-line .lv { margin-right: 6px; }
+  .log-line.ok .lv { color: var(--green); }
+  .log-line.warn .lv { color: var(--amber); }
+  .log-line.err .lv { color: var(--red); }
+  .log-line.info .lv { color: var(--blue); }
+  .setup-hint {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    font-size: 12px;
+    line-height: 1.8;
+    color: var(--text2);
+    display: none;
+  }
+  .setup-hint.show { display: block; }
+  .setup-hint code {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: var(--green);
+    font-size: 11px;
+  }
+  .setup-hint h3 { font-family: var(--font2); font-weight: normal; color: var(--text); font-size: 14px; margin-bottom: 10px; }
+  .setup-hint ul { padding-left: 16px; }
+  .setup-hint li { margin-bottom: 4px; }
+  .no-serial-warning {
+    background: #2e1f0f;
+    border: 1px solid #6b4a0f;
+    color: var(--amber);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    font-size: 12px;
+    margin-bottom: 16px;
+    display: none;
+  }
+  .no-serial-warning.show { display: block; }
+  .section-btn {
+    background: none; border: none; color: var(--text3); font-family: var(--font);
+    font-size: 10px; cursor: pointer; letter-spacing: 1px; padding: 0; margin-left: 12px;
+    text-decoration: underline;
+  }
+  .section-btn:hover { color: var(--text2); }
+  .bar-chart-wrap { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+  .bar-row { display: flex; align-items: center; gap: 10px; }
+  .bar-label { font-size: 10px; color: var(--text2); width: 80px; text-align: right; flex-shrink: 0; }
+  .bar-bg { flex: 1; height: 14px; background: var(--bg3); border-radius: 3px; overflow: hidden; position: relative; }
+  .bar-fill { height: 100%; border-radius: 3px; transition: width 0.6s; display: flex; align-items: center; }
+  .bar-text { font-size: 9px; padding-left: 6px; color: rgba(0,0,0,0.6); }
+  footer {
+    margin-top: 24px;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+    font-size: 10px;
+    color: var(--text3);
+    letter-spacing: 0.5px;
+    display: flex;
+    justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="1.5" stroke-linecap="round">
+        <path d="M12 2C12 2 6 8 6 13a6 6 0 0012 0c0-5-6-11-6-11z"/>
+        <path d="M9 15c0 1.7 1.3 3 3 3"/>
+      </svg>
+    </div>
+    <h1>Soil Moisture Monitor <span>Arduino Serial Dashboard &mdash; v1.0</span></h1>
+  </div>
+  <div class="conn-area">
+    <span><span class="status-dot" id="statusDot"></span><span id="statusText" style="font-size:11px;color:var(--text3)">DISCONNECTED</span></span>
+    <select class="baud-select" id="baudRate">
+      <option value="9600">9600 baud</option>
+      <option value="19200">19200 baud</option>
+      <option value="38400">38400 baud</option>
+      <option value="57600">57600 baud</option>
+      <option value="115200" selected>115200 baud</option>
+    </select>
+    <button class="btn btn-connect" id="connectBtn" onclick="toggleConnect()">CONNECT ARDUINO</button>
+    <button class="btn btn-sim" id="simBtn" onclick="toggleSim()">SIMULATE</button>
+    <button class="section-btn" onclick="toggleSetup()">setup help ?</button>
+  </div>
+</header>
+
+<div class="no-serial-warning" id="noSerialWarn">
+  Web Serial API not supported. Please use Google Chrome or Microsoft Edge (desktop).
+</div>
+
+<div class="setup-hint" id="setupHint">
+  <h3>Arduino Setup Guide</h3>
+  <ul>
+    <li>Upload your sketch to Arduino — it must call <code>Serial.begin(115200)</code> (or match the baud rate above)</li>
+    <li>In your loop, print the moisture value: <code>Serial.println(sensorValue);</code></li>
+    <li>Supported formats: <code>523</code> &nbsp;|&nbsp; <code>Moisture: 523</code> &nbsp;|&nbsp; <code>moisture=45.3%</code> &nbsp;|&nbsp; <code>{"moisture":523}</code></li>
+    <li>Values 0–1023 (raw analog) are auto-detected and converted to %. Values with a % sign are used directly.</li>
+    <li>Close Arduino IDE Serial Monitor before connecting here — only one app can hold the serial port at a time.</li>
+    <li>Click <strong>CONNECT ARDUINO</strong>, select your COM/ttyUSB port, and data will stream live.</li>
+  </ul>
+</div>
+
+<div class="grid-top">
+  <div class="card">
+    <div class="card-label">Current Moisture</div>
+    <div>
+      <span class="big-val" id="bigVal">--</span><span class="big-unit">%</span>
+    </div>
+    <div class="raw-val" id="rawVal">Raw: --- &nbsp;|&nbsp; Analog: ---</div>
+    <div><span class="status-badge badge-idle" id="statusBadge">&#9679; AWAITING DATA</span></div>
+    <div style="margin-top:16px;">
+      <div class="stats-grid">
+        <div class="stat-item"><div class="stat-label">Min (session)</div><div class="stat-val" id="sMin">--</div></div>
+        <div class="stat-item"><div class="stat-label">Max (session)</div><div class="stat-val" id="sMax">--</div></div>
+        <div class="stat-item"><div class="stat-label">Average</div><div class="stat-val" id="sAvg">--</div></div>
+        <div class="stat-item"><div class="stat-label">Readings</div><div class="stat-val" id="sCount">0</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="padding:18px 18px 10px;">
+    <div class="chart-header">
+      <span class="chart-title">Moisture Trend (last 60 readings)</span>
+      <span class="chart-meta" id="trendMeta">— %/min</span>
+    </div>
+    <div style="position:relative;height:180px;">
+      <canvas id="trendChart" role="img" aria-label="Line chart of moisture readings over time">Moisture trend over last 60 readings.</canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Rate of Change</div>
+    <div class="stat-val" id="rateVal" style="font-size:26px;color:var(--text)">-- %/min</div>
+    <div class="evap-bars" style="margin-top:16px;">
+      <div class="evap-row">
+        <div class="evap-label">1 min</div>
+        <div class="evap-bar-bg"><div class="evap-bar-fill" id="evapBar1" style="width:0%;background:#4ade80;"></div></div>
+        <div class="evap-val" id="evapVal1">0.0 %/min</div>
+      </div>
+      <div class="evap-row">
+        <div class="evap-label">5 min</div>
+        <div class="evap-bar-bg"><div class="evap-bar-fill" id="evapBar5" style="width:0%;background:#60a5fa;"></div></div>
+        <div class="evap-val" id="evapVal5">0.0 %/min</div>
+      </div>
+      <div class="evap-row">
+        <div class="evap-label">15 min</div>
+        <div class="evap-bar-bg"><div class="evap-bar-fill" id="evapBar15" style="width:0%;background:#a78bfa;"></div></div>
+        <div class="evap-val" id="evapVal15">0.0 %/min</div>
+      </div>
+    </div>
+    <div style="margin-top:16px; border-top:1px solid var(--border); padding-top:14px;">
+      <div class="card-label">Trend Direction</div>
+      <div id="trendDir" style="font-size:13px;color:var(--text2);margin-top:4px;">Collecting data...</div>
+    </div>
+  </div>
+</div>
+
+<div class="bottom-row">
+  <div class="card">
+    <div class="card-label">Status History <span style="float:right;cursor:pointer;color:var(--text3);font-size:10px;" onclick="clearLog()">CLEAR</span></div>
+    <div class="log-box" id="logBox"></div>
+  </div>
+  <div class="card">
+    <div class="card-label">Moisture Zone Breakdown</div>
+    <div class="bar-chart-wrap" id="zoneChart">
+      <div class="bar-row"><div class="bar-label">Saturated</div><div class="bar-bg"><div class="bar-fill" id="bSat" style="width:0%;background:#3b82f6;"><span class="bar-text" id="bSatT">0</span></div></div></div>
+      <div class="bar-row"><div class="bar-label">Wet</div><div class="bar-bg"><div class="bar-fill" id="bWet" style="width:0%;background:#60a5fa;"><span class="bar-text" id="bWetT">0</span></div></div></div>
+      <div class="bar-row"><div class="bar-label">Optimal</div><div class="bar-bg"><div class="bar-fill" id="bOpt" style="width:0%;background:#4ade80;"><span class="bar-text" id="bOptT">0</span></div></div></div>
+      <div class="bar-row"><div class="bar-label">Low</div><div class="bar-bg"><div class="bar-fill" id="bLow" style="width:0%;background:#fbbf24;"><span class="bar-text" id="bLowT">0</span></div></div></div>
+      <div class="bar-row"><div class="bar-label">Dry</div><div class="bar-bg"><div class="bar-fill" id="bDry" style="width:0%;background:#f87171;"><span class="bar-text" id="bDryT">0</span></div></div></div>
+    </div>
+    <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;">
+      <div class="card-label">Estimated Time to Dry (if no water)</div>
+      <div id="timeToDry" style="font-size:16px;color:var(--text2);margin-top:4px;">-- hours</div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <span>SOIL MOISTURE MONITOR &mdash; Web Serial API &mdash; Chrome / Edge only</span>
+  <span id="footerTime">--:--:--</span>
+</footer>
+
+<script>
+const THRESHOLDS = { saturated:80, wet:65, optimal:40, low:20 };
+let readings = [];
+let timestamps = [];
+let zoneCounts = { dry:0, low:0, optimal:0, wet:0, saturated:0 };
+let port = null, reader = null, simInterval = null;
+let simulating = false, connected = false;
+let buffer = '';
+
+const trendCtx = document.getElementById('trendChart').getContext('2d');
+const trendChart = new Chart(trendCtx, {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [{
+      label: 'Moisture %',
+      data: [],
+      borderColor: '#4ade80',
+      borderWidth: 1.5,
+      pointRadius: 0,
+      fill: true,
+      backgroundColor: 'rgba(74,222,128,0.06)',
+      tension: 0.3
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 200 },
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { display: false },
+      y: {
+        min: 0, max: 100,
+        grid: { color: 'rgba(42,58,44,0.6)', lineWidth: 0.5 },
+        ticks: { color: '#4a5e4c', font: { family: 'Courier New', size: 9 }, callback: v => v + '%' },
+        border: { color: 'transparent' }
+      }
+    }
+  }
+});
+
+function getStatus(pct) {
+  if (pct >= THRESHOLDS.saturated) return 'saturated';
+  if (pct >= THRESHOLDS.wet) return 'wet';
+  if (pct >= THRESHOLDS.optimal) return 'optimal';
+  if (pct >= THRESHOLDS.low) return 'low';
+  return 'dry';
+}
+
+function parseLine(line) {
+  line = line.trim();
+  if (!line) return null;
+  const jsonM = line.match(/moisture["\s]*:\s*([\d.]+)/i);
+  if (jsonM) return parseFloat(jsonM[1]);
+  const pctM = line.match(/([\d.]+)\s*%/);
+  if (pctM) return Math.min(100, parseFloat(pctM[1]));
+  const numM = line.match(/([\d]{1,4}(\.\d+)?)/);
+  if (numM) {
+    const v = parseFloat(numM[1]);
+    if (v > 100) return parseFloat((v / 1023 * 100).toFixed(1));
+    return v;
+  }
+  return null;
+}
+
+function processValue(pct, raw) {
+  if (pct === null || isNaN(pct)) return;
+  pct = Math.max(0, Math.min(100, pct));
+  const now = Date.now();
+  readings.push(pct);
+  timestamps.push(now);
+  if (readings.length > 3600) { readings.shift(); timestamps.shift(); }
+
+  const status = getStatus(pct);
+  zoneCounts[status]++;
+
+  document.getElementById('bigVal').textContent = pct.toFixed(1);
+  document.getElementById('bigVal').className = 'big-val ' + (status === 'optimal' ? '' : status === 'saturated' ? 'wet' : status);
+  document.getElementById('rawVal').textContent = `Raw: ${raw || '--'}  |  Analog: ${raw ? Math.round(raw * 1023 / 100) : '--'}`;
+
+  const badge = document.getElementById('statusBadge');
+  const labels = { dry:'DRY - CRITICAL', low:'LOW - NEEDS WATER', optimal:'OPTIMAL', wet:'WET', saturated:'SATURATED' };
+  badge.textContent = '\u25CF ' + labels[status];
+  badge.className = 'status-badge badge-' + status;
+
+  const mn = Math.min(...readings), mx = Math.max(...readings);
+  const avg = readings.reduce((a,b)=>a+b,0)/readings.length;
+  document.getElementById('sMin').textContent = mn.toFixed(1) + '%';
+  document.getElementById('sMax').textContent = mx.toFixed(1) + '%';
+  document.getElementById('sAvg').textContent = avg.toFixed(1) + '%';
+  document.getElementById('sCount').textContent = readings.length;
+
+  updateTrend();
+  updateEvap();
+  updateZoneChart();
+  updateTrendChart(pct);
+  addLog(pct, status);
+}
+
+function updateTrend() {
+  const n = readings.length;
+  if (n < 5) return;
+  const recent = readings.slice(-5);
+  const old5 = readings.slice(-5)[0];
+  const dt = (timestamps[n-1] - timestamps[n-5]) / 60000;
+  const rate = dt > 0 ? (readings[n-1] - old5) / dt : 0;
+  document.getElementById('rateVal').textContent = (rate > 0 ? '+' : '') + rate.toFixed(2) + ' %/min';
+  document.getElementById('rateVal').style.color = rate > 0.1 ? '#60a5fa' : rate < -0.1 ? '#f87171' : '#8fa690';
+  const trendMsgs = rate > 0.5 ? '&#9650; Rising fast — possible overwatering' :
+    rate > 0.1 ? '&#9650; Slowly rising — good' :
+    rate < -0.5 ? '&#9660; Dropping fast — high evaporation or drainage' :
+    rate < -0.1 ? '&#9660; Gradually drying' : '&#8212; Stable';
+  document.getElementById('trendDir').innerHTML = trendMsgs;
+  document.getElementById('trendMeta').textContent = (rate > 0 ? '+' : '') + rate.toFixed(2) + ' %/min';
+}
+
+function calcRateOver(minutes) {
+  const n = readings.length;
+  if (n < 2) return 0;
+  const targetMs = minutes * 60000;
+  const now = timestamps[n-1];
+  let idx = n-1;
+  for (let i = n-2; i >= 0; i--) {
+    if (now - timestamps[i] >= targetMs) { idx = i; break; }
+    if (i === 0) idx = 0;
+  }
+  const dt = (timestamps[n-1] - timestamps[idx]) / 60000;
+  return dt > 0 ? (readings[n-1] - readings[idx]) / dt : 0;
+}
+
+function updateEvap() {
+  const r1 = calcRateOver(1), r5 = calcRateOver(5), r15 = calcRateOver(15);
+  const fmt = r => (r > 0 ? '+' : '') + r.toFixed(2) + ' %/min';
+  document.getElementById('evapVal1').textContent = fmt(r1);
+  document.getElementById('evapVal5').textContent = fmt(r5);
+  document.getElementById('evapVal15').textContent = fmt(r15);
+  const pct = v => Math.min(100, Math.abs(v) * 20) + '%';
+  document.getElementById('evapBar1').style.width = pct(r1);
+  document.getElementById('evapBar5').style.width = pct(r5);
+  document.getElementById('evapBar15').style.width = pct(r15);
+  document.getElementById('evapBar1').style.background = r1 < 0 ? '#f87171' : '#4ade80';
+  document.getElementById('evapBar5').style.background = r5 < 0 ? '#f87171' : '#60a5fa';
+  document.getElementById('evapBar15').style.background = r15 < 0 ? '#f87171' : '#a78bfa';
+
+  const n = readings.length;
+  if (n > 1 && r15 < 0 && readings[n-1] > 0) {
+    const hrs = (readings[n-1] / Math.abs(r15)) / 60;
+    document.getElementById('timeToDry').textContent = hrs > 999 ? '> 999 hrs' : hrs.toFixed(1) + ' hours';
+  } else if (r15 >= 0) {
+    document.getElementById('timeToDry').textContent = 'N/A — moisture rising';
+  }
+}
+
+function updateZoneChart() {
+  const total = Object.values(zoneCounts).reduce((a,b)=>a+b,0) || 1;
+  const keys = ['saturated','wet','optimal','low','dry'];
+  const ids  = ['bSat','bWet','bOpt','bLow','bDry'];
+  const tids = ['bSatT','bWetT','bOptT','bLowT','bDryT'];
+  keys.forEach((k,i) => {
+    const w = (zoneCounts[k]/total*100).toFixed(1);
+    document.getElementById(ids[i]).style.width = w + '%';
+    document.getElementById(tids[i]).textContent = zoneCounts[k];
+  });
+}
+
+function updateTrendChart(pct) {
+  const d = trendChart.data;
+  const now = new Date();
+  d.labels.push(`${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`);
+  d.datasets[0].data.push(pct);
+  if (d.labels.length > 60) { d.labels.shift(); d.datasets[0].data.shift(); }
+  const color = pct >= 65 ? '#60a5fa' : pct >= 40 ? '#4ade80' : pct >= 20 ? '#fbbf24' : '#f87171';
+  trendChart.data.datasets[0].borderColor = color;
+  trendChart.update('none');
+}
+
+let lastStatus = null;
+function addLog(pct, status) {
+  const box = document.getElementById('logBox');
+  if (status === lastStatus && box.children.length > 0) return;
+  lastStatus = status;
+  const ts = new Date().toLocaleTimeString();
+  const msgs = {
+    dry: 'ALERT — Soil critically dry. Water immediately.',
+    low: 'WARNING — Moisture low. Consider watering.',
+    optimal: 'INFO — Moisture in optimal range.',
+    wet: 'INFO — Soil is wet. Monitor drainage.',
+    saturated: 'CAUTION — Saturated. Stop watering.'
+  };
+  const types = { dry:'err', low:'warn', optimal:'ok', wet:'info', saturated:'warn' };
+  const lvs = { dry:'[DRY]', low:'[LOW]', optimal:'[OK] ', wet:'[WET]', saturated:'[SAT]' };
+  const div = document.createElement('div');
+  div.className = 'log-line ' + types[status];
+  div.innerHTML = `<span class="ts">${ts}</span><span class="lv">${lvs[status]}</span>${msgs[status]} (${pct.toFixed(1)}%)`;
+  box.insertBefore(div, box.firstChild);
+  if (box.children.length > 50) box.removeChild(box.lastChild);
+}
+
+function clearLog() {
+  document.getElementById('logBox').innerHTML = '';
+  lastStatus = null;
+}
+
+async function toggleConnect() {
+  if (!('serial' in navigator)) {
+    document.getElementById('noSerialWarn').classList.add('show');
+    return;
+  }
+  if (connected) {
+    await disconnect();
+  } else {
+    await connect();
+  }
+}
+
+async function connect() {
+  try {
+    port = await navigator.serial.requestPort();
+    const baud = parseInt(document.getElementById('baudRate').value);
+    await port.open({ baudRate: baud });
+    connected = true;
+    setConnState(true);
+    readLoop();
+  } catch(e) {
+    addManualLog('ERR', 'Connection failed: ' + e.message);
+  }
+}
+
+async function disconnect() {
+  connected = false;
+  if (reader) { try { await reader.cancel(); } catch(e) {} reader = null; }
+  if (port) { try { await port.close(); } catch(e) {} port = null; }
+  setConnState(false);
+}
+
+async function readLoop() {
+  const decoder = new TextDecoderStream();
+  port.readable.pipeTo(decoder.writable);
+  const inputStream = decoder.readable;
+  reader = inputStream.getReader();
+  try {
+    while (connected) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += value;
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      for (const line of lines) {
+        const v = parseLine(line);
+        if (v !== null) processValue(v, line.trim());
+      }
+    }
+  } catch(e) {
+    if (connected) addManualLog('ERR', 'Serial error: ' + e.message);
+  } finally {
+    reader = null;
+    if (connected) disconnect();
+  }
+}
+
+function setConnState(c) {
+  document.getElementById('statusDot').className = 'status-dot ' + (c ? 'connected' : '');
+  document.getElementById('statusText').textContent = c ? 'CONNECTED' : 'DISCONNECTED';
+  document.getElementById('statusText').style.color = c ? '#4ade80' : '#4a5e4c';
+  const btn = document.getElementById('connectBtn');
+  btn.textContent = c ? 'DISCONNECT' : 'CONNECT ARDUINO';
+  btn.className = 'btn btn-connect' + (c ? ' connected' : '');
+}
+
+function toggleSim() {
+  if (simulating) stopSim(); else startSim();
+}
+
+let simMoisture = 65;
+let simDrift = -0.02;
+function startSim() {
+  simulating = true;
+  simMoisture = 65;
+  document.getElementById('simBtn').textContent = 'STOP SIM';
+  document.getElementById('simBtn').className = 'btn btn-sim active';
+  document.getElementById('statusDot').className = 'status-dot simulating';
+  document.getElementById('statusText').textContent = 'SIMULATING';
+  document.getElementById('statusText').style.color = '#60a5fa';
+  simInterval = setInterval(() => {
+    simDrift += (Math.random() - 0.5) * 0.01;
+    simDrift = Math.max(-0.15, Math.min(0.05, simDrift));
+    simMoisture += simDrift + (Math.random()-0.5)*0.3;
+    if (simMoisture < 10) { simMoisture = 10; simDrift = Math.abs(simDrift); }
+    if (simMoisture > 95) { simMoisture = 95; simDrift = -Math.abs(simDrift); }
+    processValue(parseFloat(simMoisture.toFixed(2)), null);
+  }, 1000);
+}
+
+function stopSim() {
+  simulating = false;
+  clearInterval(simInterval);
+  document.getElementById('simBtn').textContent = 'SIMULATE';
+  document.getElementById('simBtn').className = 'btn btn-sim';
+  document.getElementById('statusDot').className = 'status-dot';
+  document.getElementById('statusText').textContent = 'DISCONNECTED';
+  document.getElementById('statusText').style.color = '#4a5e4c';
+}
+
+function toggleSetup() {
+  const h = document.getElementById('setupHint');
+  h.classList.toggle('show');
+}
+
+function addManualLog(type, msg) {
+  const box = document.getElementById('logBox');
+  const ts = new Date().toLocaleTimeString();
+  const typeMap = { ERR:'err', WARN:'warn', OK:'ok', INFO:'info' };
+  const div = document.createElement('div');
+  div.className = 'log-line ' + (typeMap[type] || 'info');
+  div.innerHTML = `<span class="ts">${ts}</span><span class="lv">[${type}]</span>${msg}`;
+  box.insertBefore(div, box.firstChild);
+}
+
+if (!('serial' in navigator)) {
+  document.getElementById('noSerialWarn').classList.add('show');
+}
+
+setInterval(() => {
+  document.getElementById('footerTime').textContent = new Date().toLocaleTimeString();
+}, 1000);
+
+addManualLog('INFO', 'Dashboard ready. Connect Arduino or use Simulate mode.');
+</script>
+</body>
+</html>
