@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Soil Moisture Monitor</title>
+<title>WiseWater</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -210,30 +210,6 @@
   @keyframes pulse-ring {
     0%, 100% { opacity: 0; transform: scale(1); }
     50% { opacity: 1; transform: scale(1.2); }
-  }
-  
-  select {
-    background: var(--card);
-    border: 1px solid var(--border);
-    color: var(--text-secondary);
-    padding: 10px 14px;
-    border-radius: var(--radius-md);
-    font-family: 'Inter', sans-serif;
-    font-size: 13px;
-    cursor: pointer;
-    transition: all 0.2s;
-    font-weight: 500;
-  }
-  
-  select:hover {
-    border-color: var(--border-light);
-    background: var(--card-hover);
-  }
-  
-  select:focus {
-    outline: none;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px var(--primary-glow);
   }
   
   .btn {
@@ -867,8 +843,8 @@
         </svg>
       </div>
       <div>
-        <h1>Soil Moisture Monitor</h1>
-        <div class="subtitle">Real-time Arduino Serial Dashboard v1.0</div>
+        <h1>WiseWater</h1>
+        <div class="subtitle">Real-time NodeMCU ESP8266 Serial Dashboard v1.0</div>
       </div>
     </div>
     
@@ -878,16 +854,8 @@
         <span id="statusText">DISCONNECTED</span>
       </div>
       
-      <select id="baudRate">
-        <option value="9600">9600 baud</option>
-        <option value="19200">19200 baud</option>
-        <option value="38400">38400 baud</option>
-        <option value="57600">57600 baud</option>
-        <option value="115200" selected>115200 baud</option>
-      </select>
-      
       <button class="btn btn-primary" id="connectBtn" onclick="toggleConnect()">
-        CONNECT ARDUINO
+        CONNECT ESP8266
       </button>
       
       <button class="btn btn-secondary" id="simBtn" onclick="toggleSim()">
@@ -905,15 +873,15 @@
   </div>
   
   <div class="help-section" id="setupHint">
-    <h3 class="help-title">Arduino Setup Guide</h3>
+    <h3 class="help-title">NodeMCU ESP8266 Setup Guide</h3>
     <div class="help-content">
       <ul>
-        <li>Upload your sketch to Arduino — it must call <code>Serial.begin(115200)</code> (or match the baud rate above)</li>
+        <li>Upload your sketch to NodeMCU ESP8266 — it must call <code>Serial.begin(115200)</code></li>
         <li>In your loop, print the moisture value: <code>Serial.println(sensorValue);</code></li>
         <li>Supported formats: <code>523</code> &nbsp;|&nbsp; <code>Moisture: 523</code> &nbsp;|&nbsp; <code>moisture=45.3%</code> &nbsp;|&nbsp; <code>{"moisture":523}</code></li>
         <li>Values 0–1023 (raw analog) are auto-detected and converted to %. Values with a % sign are used directly.</li>
-        <li>Close Arduino IDE Serial Monitor before connecting here — only one app can hold the serial port at a time.</li>
-        <li>Click <strong>CONNECT ARDUINO</strong>, select your COM/ttyUSB port, and data will stream live.</li>
+        <li>Close any Serial Monitor before connecting here — only one app can hold the serial port at a time.</li>
+        <li>Click <strong>CONNECT ESP8266</strong>, select your COM/ttyUSB port, and data will stream live.</li>
       </ul>
     </div>
   </div>
@@ -1084,7 +1052,7 @@
   </div>
   
   <footer>
-    <span>Soil Moisture Monitor • Web Serial API • Chrome/Edge Only</span>
+    <span>WiseWater • NodeMCU ESP8266 Serial Dashboard • Chrome/Edge Only</span>
     <span id="footerTime">--:--:--</span>
   </footer>
 </div>
@@ -1350,7 +1318,7 @@ async function toggleConnect() {
 async function connect() {
   try {
     port = await navigator.serial.requestPort();
-    const baud = parseInt(document.getElementById('baudRate').value);
+    const baud = 115200;
     await port.open({ baudRate: baud });
     connected = true;
     setConnState(true);
@@ -1396,7 +1364,7 @@ function setConnState(c) {
   document.getElementById('statusDot').className = 'status-dot ' + (c ? 'connected' : '');
   document.getElementById('statusText').textContent = c ? 'CONNECTED' : 'DISCONNECTED';
   const btn = document.getElementById('connectBtn');
-  btn.textContent = c ? 'DISCONNECT' : 'CONNECT ARDUINO';
+  btn.textContent = c ? 'DISCONNECT' : 'CONNECT ESP8266';
   btn.className = 'btn btn-primary' + (c ? ' connected' : '');
 }
 
@@ -1454,7 +1422,7 @@ setInterval(() => {
   document.getElementById('footerTime').textContent = new Date().toLocaleTimeString();
 }, 1000);
 
-addManualLog('INFO', 'Dashboard ready. Connect Arduino or use Simulate mode.');
+addManualLog('INFO', 'Dashboard ready. Connect NodeMCU ESP8266 or use Simulate mode.');
 </script>
 </body>
 </html>
