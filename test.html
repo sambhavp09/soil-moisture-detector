@@ -409,13 +409,6 @@
     -webkit-text-fill-color: transparent;
   }
   
-  .moisture-unit {
-    font-size: 24px;
-    color: var(--text-secondary);
-    font-weight: 600;
-    margin-left: 4px;
-  }
-  
   .moisture-meta {
     font-size: 12px;
     color: var(--text-tertiary);
@@ -888,8 +881,8 @@
       <ul>
         <li>Upload your sketch to NodeMCU ESP8266 — it must call <code>Serial.begin(115200)</code></li>
         <li>In your loop, print the moisture value: <code>Serial.println(sensorValue);</code></li>
-        <li>Supported formats: <code>523</code> &nbsp;|&nbsp; <code>Moisture: 523</code> &nbsp;|&nbsp; <code>moisture=45.3%</code> &nbsp;|&nbsp; <code>{"moisture":523}</code></li>
-        <li>Values 0–1023 (raw analog) are auto-detected and converted to %. Values with a % sign are used directly.</li>
+        <li>Supported formats: <code>523</code> &nbsp;|&nbsp; <code>Moisture: 523</code> &nbsp;|&nbsp; <code>moisture=45.3%</code> (parsed as 0–100 index) &nbsp;|&nbsp; <code>{"moisture":523}</code></li>
+        <li>Values 0–1023 (raw analog) map to a 0–100 index for the chart. A trailing <code>%</code> on a number is accepted from the device.</li>
         <li>Close any Serial Monitor before connecting here — only one app can hold the serial port at a time.</li>
         <li>Click <strong>CONNECT ESP8266</strong>, select your COM/ttyUSB port, and data will stream live.</li>
       </ul>
@@ -899,12 +892,12 @@
   <div class="grid-main">
     <div class="card">
       <div class="card-header">
-        <div class="card-title">Current Moisture</div>
+        <div class="card-title">Soil reading (0–100 index)</div>
       </div>
       
       <div class="moisture-display">
         <div>
-          <span class="moisture-value" id="bigVal">--</span><span class="moisture-unit">%</span>
+          <span class="moisture-value" id="bigVal">--</span>
         </div>
         <div class="moisture-meta" id="rawVal">Raw: --- | Analog: ---</div>
         <div>
@@ -933,15 +926,15 @@
       
       <div class="stats-grid">
         <div class="stat-item">
-          <div class="stat-label">Minimum</div>
+          <div class="stat-label">Min index</div>
           <div class="stat-value" id="sMin">--</div>
         </div>
         <div class="stat-item">
-          <div class="stat-label">Maximum</div>
+          <div class="stat-label">Max index</div>
           <div class="stat-value" id="sMax">--</div>
         </div>
         <div class="stat-item" style="grid-column: 1 / -1;">
-          <div class="stat-label">Average</div>
+          <div class="stat-label">Avg index</div>
           <div class="stat-value" id="sAvg">--</div>
         </div>
       </div>
@@ -949,8 +942,8 @@
     
     <div class="card">
       <div class="card-header">
-        <div class="card-title">Moisture Trend (Last 60 Readings)</div>
-        <div class="chart-meta" id="trendMeta">— %/min</div>
+        <div class="card-title">Reading trend (last 60 samples)</div>
+        <div class="chart-meta" id="trendMeta">— index/min</div>
       </div>
       <div class="chart-container">
         <canvas id="trendChart"></canvas>
@@ -959,11 +952,11 @@
     
     <div class="card">
       <div class="card-header">
-        <div class="card-title">Rate of Change</div>
+        <div class="card-title">Index rate of change</div>
       </div>
       
       <div class="rate-display">
-        <div class="rate-value" id="rateVal">-- %/min</div>
+        <div class="rate-value" id="rateVal">— index/min</div>
       </div>
       
       <div class="rate-bars">
@@ -972,21 +965,21 @@
           <div class="rate-bar-bg">
             <div class="rate-bar-fill" id="evapBar1" style="width:0%; background:#10b981;"></div>
           </div>
-          <div class="rate-text" id="evapVal1">0.0 %/min</div>
+          <div class="rate-text" id="evapVal1">0.00 index/min</div>
         </div>
         <div class="rate-row">
           <div class="rate-label">5 min</div>
           <div class="rate-bar-bg">
             <div class="rate-bar-fill" id="evapBar5" style="width:0%; background:#06b6d4;"></div>
           </div>
-          <div class="rate-text" id="evapVal5">0.0 %/min</div>
+          <div class="rate-text" id="evapVal5">0.00 index/min</div>
         </div>
         <div class="rate-row">
           <div class="rate-label">15 min</div>
           <div class="rate-bar-bg">
             <div class="rate-bar-fill" id="evapBar15" style="width:0%; background:#8b5cf6;"></div>
           </div>
-          <div class="rate-text" id="evapVal15">0.0 %/min</div>
+          <div class="rate-text" id="evapVal15">0.00 index/min</div>
         </div>
       </div>
       
@@ -1008,7 +1001,7 @@
     
     <div class="card">
       <div class="card-header">
-        <div class="card-title">Moisture Zone Breakdown</div>
+        <div class="card-title">Index band breakdown</div>
       </div>
       
       <div class="zone-bars">
@@ -1082,7 +1075,7 @@ const trendChart = new Chart(trendCtx, {
   data: {
     labels: [],
     datasets: [{
-      label: 'Moisture %',
+      label: 'Reading index',
       data: [],
       borderColor: '#10b981',
       borderWidth: 2,
@@ -1108,7 +1101,7 @@ const trendChart = new Chart(trendCtx, {
         ticks: { 
           color: '#6b7280',
           font: { family: 'Inter', size: 10, weight: '500' },
-          callback: v => v + '%'
+          callback: v => (v === 0 ? '0 dry' : v === 100 ? '100 wet' : String(Math.round(v)))
         },
         border: { display: false }
       }
@@ -1174,7 +1167,7 @@ function processValue(reading) {
 
   document.getElementById('bigVal').textContent = clampedPct.toFixed(1);
   document.getElementById('bigVal').className = 'moisture-value ' + (status === 'optimal' ? '' : status === 'saturated' ? 'wet' : status);
-  document.getElementById('rawVal').textContent = `Raw: ${raw ?? '--'} | Analog: ${raw !== null && raw !== undefined ? Math.round(raw * 1023 / 100) : '--'}`;
+  document.getElementById('rawVal').textContent = `Raw: ${raw ?? '--'} | ADC est.: ${raw !== null && raw !== undefined ? Math.round(raw * 1023 / 100) : '--'}`;
 
   const sensorText = sensorDry === 1 ? 'DRY' : sensorDry === 0 ? 'WET' : '--';
   const pumpText = pump === 1 ? 'ON' : pump === 0 ? 'OFF' : '--';
@@ -1191,9 +1184,9 @@ function processValue(reading) {
 
   const mn = Math.min(...readings), mx = Math.max(...readings);
   const avg = readings.reduce((a,b)=>a+b,0)/readings.length;
-  document.getElementById('sMin').textContent = mn.toFixed(1) + '%';
-  document.getElementById('sMax').textContent = mx.toFixed(1) + '%';
-  document.getElementById('sAvg').textContent = avg.toFixed(1) + '%';
+  document.getElementById('sMin').textContent = mn.toFixed(1);
+  document.getElementById('sMax').textContent = mx.toFixed(1);
+  document.getElementById('sAvg').textContent = avg.toFixed(1);
   document.getElementById('sCount').textContent = readings.length;
 
   updateTrend();
@@ -1212,7 +1205,7 @@ function updateTrend() {
   const rate = dt > 0 ? (readings[n-1] - old5) / dt : 0;
   
   const rateEl = document.getElementById('rateVal');
-  rateEl.textContent = (rate > 0 ? '+' : '') + rate.toFixed(2) + ' %/min';
+  rateEl.textContent = (rate > 0 ? '+' : '') + rate.toFixed(2) + ' index/min';
   rateEl.className = 'rate-value';
   if (rate > 0.1) rateEl.classList.add('positive');
   else if (rate < -0.1) rateEl.classList.add('negative');
@@ -1222,7 +1215,7 @@ function updateTrend() {
     rate < -0.5 ? '▼ Dropping fast — high evaporation or drainage' :
     rate < -0.1 ? '▼ Gradually drying' : '— Stable';
   document.getElementById('trendDir').innerHTML = trendMsgs;
-  document.getElementById('trendMeta').textContent = (rate > 0 ? '+' : '') + rate.toFixed(2) + ' %/min';
+  document.getElementById('trendMeta').textContent = (rate > 0 ? '+' : '') + rate.toFixed(2) + ' index/min';
 }
 
 function calcRateOver(minutes) {
@@ -1241,7 +1234,7 @@ function calcRateOver(minutes) {
 
 function updateEvap() {
   const r1 = calcRateOver(1), r5 = calcRateOver(5), r15 = calcRateOver(15);
-  const fmt = r => (r > 0 ? '+' : '') + r.toFixed(2) + ' %/min';
+  const fmt = r => (r > 0 ? '+' : '') + r.toFixed(2) + ' index/min';
   document.getElementById('evapVal1').textContent = fmt(r1);
   document.getElementById('evapVal5').textContent = fmt(r5);
   document.getElementById('evapVal15').textContent = fmt(r15);
@@ -1258,7 +1251,7 @@ function updateEvap() {
     const hrs = (readings[n-1] / Math.abs(r15)) / 60;
     document.getElementById('timeToDry').textContent = hrs > 999 ? '> 999 hrs' : hrs.toFixed(1) + ' hours';
   } else if (r15 >= 0) {
-    document.getElementById('timeToDry').textContent = 'N/A — moisture rising';
+    document.getElementById('timeToDry').textContent = 'N/A — index rising';
   }
 }
 
@@ -1303,7 +1296,7 @@ function addLog(pct, status, pump) {
   const lvs = { dry:'[DRY]', low:'[LOW]', optimal:'[OK]', wet:'[WET]', saturated:'[SAT]' };
   const div = document.createElement('div');
   div.className = 'log-entry ' + types[status];
-  div.innerHTML = `<span class="log-time">${ts}</span><span class="log-badge">${lvs[status]}</span><span class="log-message">${msgs[status]} (${pct.toFixed(1)}%) | Pump: ${pump === 1 ? 'ON' : pump === 0 ? 'OFF' : '--'}</span>`;
+  div.innerHTML = `<span class="log-time">${ts}</span><span class="log-badge">${lvs[status]}</span><span class="log-message">${msgs[status]} (index ${pct.toFixed(1)}) | Pump: ${pump === 1 ? 'ON' : pump === 0 ? 'OFF' : '--'}</span>`;
   box.insertBefore(div, box.firstChild);
   if (box.children.length > 50) box.removeChild(box.lastChild);
 }
