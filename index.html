@@ -871,8 +871,8 @@
     ⚠️ Web Serial API not supported. Please use Chrome or Edge (desktop).
   </div>
 
-  <div class="alert alert-info show" id="serialDisabledNotice">
-    ℹ️ Browser serial connect is disabled here to prevent the Chrome popup. Use Simulate mode, or we can wire a local backend bridge next.
+  <div class="alert alert-info" id="serialDisabledNotice">
+    ℹ️ Ensure your ESP8266 is connected via USB and powered on. Click "CONNECT ESP8266" to select the serial port.
   </div>
   
   <div class="help-section" id="setupHint">
@@ -1329,12 +1329,24 @@ function clearLog() {
 }
 
 async function toggleConnect() {
-  addManualLog('INFO', 'Browser serial chooser is disabled in this version to avoid the popup.');
-  document.getElementById('serialDisabledNotice').classList.add('show');
+  if (connected) {
+    await disconnect();
+  } else {
+    await connect();
+  }
 }
 
 async function connect() {
-  addManualLog('INFO', 'Serial connect is disabled in this page to avoid the popup.');
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    connected = true;
+    setConnState(true);
+    readLoop();
+    addManualLog('INFO', 'Connected to ESP8266');
+  } catch (e) {
+    addManualLog('ERR', 'Failed to connect: ' + e.message);
+  }
 }
 
 async function disconnect() {
