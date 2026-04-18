@@ -892,7 +892,7 @@
   <div class="grid-main">
     <div class="card">
       <div class="card-header">
-        <div class="card-title">Soil reading (0–100 index)</div>
+        <div class="card-title">Soil Status</div>
       </div>
       
       <div class="moisture-display">
@@ -1155,19 +1155,38 @@ function processValue(reading) {
   const sensorDry = reading?.sensorDry;
   const pump = reading?.pump;
   const uptimeMs = reading?.uptimeMs;
-  if (pct === null || isNaN(pct)) return;
-  const clampedPct = Math.max(0, Math.min(100, pct));
-  const now = Date.now();
-  readings.push(clampedPct);
-  timestamps.push(now);
-  if (readings.length > 3600) { readings.shift(); timestamps.shift(); }
-
-  const status = getStatus(clampedPct);
+  
+  let clampedPct = null;
+  if (sensorDry !== null && sensorDry !== undefined) {
+    // Use binary sensor data
+    status = sensorDry ? 'dry' : 'wet';
+    displayText = sensorDry ? 'DRY' : 'WET';
+  } else if (pct !== null && !isNaN(pct)) {
+    // Fallback to percentage if binary not available
+    clampedPct = Math.max(0, Math.min(100, pct));
+    const now = Date.now();
+    readings.push(clampedPct);
+    timestamps.push(now);
+    if (readings.length > 3600) { readings.shift(); timestamps.shift(); }
+    status = getStatus(clampedPct);
+    displayText = clampedPct.toFixed(1);
+  } else {
+    return;
+  }
+  
   zoneCounts[status]++;
 
-  document.getElementById('bigVal').textContent = clampedPct.toFixed(1);
-  document.getElementById('bigVal').className = 'moisture-value ' + (status === 'optimal' ? '' : status === 'saturated' ? 'wet' : status);
-  document.getElementById('rawVal').textContent = `Raw: ${raw ?? '--'} | ADC est.: ${raw !== null && raw !== undefined ? Math.round(raw * 1023 / 100) : '--'}`;
+  document.getElementById('bigVal').textContent = displayText;
+  document.getElementById('bigVal').className = 'moisture-value ' + (status === 'wet' ? 'wet' : status === 'dry' ? 'dry' : '');
+  
+  // Hide raw value if using binary sensor
+  const rawValEl = document.getElementById('rawVal');
+  if (sensorDry !== null && sensorDry !== undefined) {
+    rawValEl.style.display = 'none';
+  } else {
+    rawValEl.textContent = `Raw: ${raw ?? '--'} | ADC est.: ${raw !== null && raw !== undefined ? Math.round(raw * 1023 / 100) : '--'}`;
+    rawValEl.style.display = 'block';
+  }
 
   const sensorText = sensorDry === 1 ? 'DRY' : sensorDry === 0 ? 'WET' : '--';
   const pumpText = pump === 1 ? 'ON' : pump === 0 ? 'OFF' : '--';
@@ -1182,17 +1201,19 @@ function processValue(reading) {
   badge.textContent = '● ' + labels[status];
   badge.className = 'status-badge badge-' + status;
 
-  const mn = Math.min(...readings), mx = Math.max(...readings);
-  const avg = readings.reduce((a,b)=>a+b,0)/readings.length;
-  document.getElementById('sMin').textContent = mn.toFixed(1);
-  document.getElementById('sMax').textContent = mx.toFixed(1);
-  document.getElementById('sAvg').textContent = avg.toFixed(1);
-  document.getElementById('sCount').textContent = readings.length;
+  if (clampedPct !== null) {
+    const mn = Math.min(...readings), mx = Math.max(...readings);
+    const avg = readings.reduce((a,b)=>a+b,0)/readings.length;
+    document.getElementById('sMin').textContent = mn.toFixed(1);
+    document.getElementById('sMax').textContent = mx.toFixed(1);
+    document.getElementById('sAvg').textContent = avg.toFixed(1);
+    document.getElementById('sCount').textContent = readings.length;
 
-  updateTrend();
-  updateEvap();
-  updateZoneChart();
-  updateTrendChart(clampedPct);
+    updateTrend();
+    updateEvap();
+    updateZoneChart();
+    updateTrendChart(clampedPct);
+  }
   addLog(clampedPct, status, pump);
 }
 
@@ -1296,7 +1317,8 @@ function addLog(pct, status, pump) {
   const lvs = { dry:'[DRY]', low:'[LOW]', optimal:'[OK]', wet:'[WET]', saturated:'[SAT]' };
   const div = document.createElement('div');
   div.className = 'log-entry ' + types[status];
-  div.innerHTML = `<span class="log-time">${ts}</span><span class="log-badge">${lvs[status]}</span><span class="log-message">${msgs[status]} (index ${pct.toFixed(1)}) | Pump: ${pump === 1 ? 'ON' : pump === 0 ? 'OFF' : '--'}</span>`;
+  const indexPart = (typeof pct === 'number' && !isNaN(pct)) ? ` (index ${pct.toFixed(1)})` : '';
+  div.innerHTML = `<span class="log-time">${ts}</span><span class="log-badge">${lvs[status]}</span><span class="log-message">${msgs[status]}${indexPart} | Pump: ${pump === 1 ? 'ON' : pump === 0 ? 'OFF' : '--'}</span>`;
   box.insertBefore(div, box.firstChild);
   if (box.children.length > 50) box.removeChild(box.lastChild);
 }
