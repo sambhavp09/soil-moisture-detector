@@ -1338,22 +1338,48 @@ async function toggleConnect() {
 
 async function connect() {
   try {
+    if (port && port.readable) {
+      addManualLog('WARN', 'Port already open. Disconnecting first...');
+      await disconnect();
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    
     port = await navigator.serial.requestPort();
+    addManualLog('INFO', 'Port selected. Opening at 115200 baud...');
     await port.open({ baudRate: 115200 });
     connected = true;
     setConnState(true);
     readLoop();
-    addManualLog('INFO', 'Connected to ESP8266');
+    addManualLog('INFO', 'Connected to ESP8266. Waiting for data...');
   } catch (e) {
-    addManualLog('ERR', 'Failed to connect: ' + e.message);
+    port = null;
+    connected = false;
+    setConnState(false);
+    addManualLog('ERR', 'Connection failed: ' + e.message);
   }
 }
 
 async function disconnect() {
   connected = false;
-  if (reader) { try { await reader.cancel(); } catch(e) {} reader = null; }
-  if (port) { try { await port.close(); } catch(e) {} port = null; }
+  if (reader) { 
+    try { 
+      await reader.cancel(); 
+    } catch(e) {
+      console.log('Reader cancel error:', e);
+    } 
+    reader = null; 
+  }
+  if (port) { 
+    try { 
+      await port.close();
+      await new Promise(r => setTimeout(r, 500));
+    } catch(e) {
+      console.log('Port close error:', e);
+    } 
+    port = null; 
+  }
   setConnState(false);
+  addManualLog('INFO', 'Disconnected from ESP8266');
 }
 
 async function readLoop() {

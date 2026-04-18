@@ -98,6 +98,10 @@ void setup() {
 
   Serial.println("NodeMCU soil moisture controller started (DO mode)");
   Serial.println("If dry/wet is inverted, set SENSOR_DRY_STATE to LOW");
+  Serial.print("SENSOR_DRY_STATE is set to: ");
+  Serial.println(SENSOR_DRY_STATE == HIGH ? "HIGH" : "LOW");
+  Serial.print("Current pin D1 state: ");
+  Serial.println(digitalRead(SOIL_SENSOR_DO_PIN) == HIGH ? "HIGH (dry)" : "LOW (wet)");
 }
 
 void loop() {
