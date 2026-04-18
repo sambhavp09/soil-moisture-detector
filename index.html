@@ -257,6 +257,41 @@
     display: flex;
     justify-content: space-between;
   }
+  .analysis-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  @media(max-width:900px){ .analysis-row{ grid-template-columns: 1fr; } }
+  .analysis-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 14px;
+    margin-top: 12px;
+  }
+  .analysis-metrics .stat-item { min-width: 0; }
+  .rec-list {
+    margin-top: 12px;
+    padding-left: 16px;
+    font-size: 11px;
+    color: var(--text2);
+    line-height: 1.65;
+  }
+  .rec-list li { margin-bottom: 6px; }
+  .rec-list li.ok { color: var(--green); }
+  .rec-list li.warn { color: var(--amber); }
+  .rec-list li.err { color: var(--red); }
+  .rec-list li.info { color: var(--blue); }
+  .rec-empty { font-size: 11px; color: var(--text3); margin-top: 10px; font-style: italic; }
+  .analysis-foot {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    font-size: 10px;
+    color: var(--text3);
+    line-height: 1.5;
+  }
 </style>
 </head>
 <body>
@@ -295,7 +330,7 @@
   <ul>
     <li>Upload your sketch to Arduino — it must call <code>Serial.begin(115200)</code> (or match the baud rate above)</li>
     <li>In your loop, print the moisture value: <code>Serial.println(sensorValue);</code></li>
-    <li>Supported formats: <code>523</code> &nbsp;|&nbsp; <code>Moisture: 523</code> &nbsp;|&nbsp; <code>moisture=45.3%</code> &nbsp;|&nbsp; <code>{"moisture":523}</code></li>
+    <li>Supported formats: <code>523</code> &nbsp;|&nbsp; <code>Moisture: 523</code> &nbsp;|&nbsp; <code>moisture=45.3%</code> &nbsp;|&nbsp; <code>{"moisture":523}</code> &nbsp;|&nbsp; NodeMCU JSON: <code>{"uptimeMs":...,"sensorDry":0|1,"moisturePctApprox":0-100,"pump":0|1}</code></li>
     <li>Values 0–1023 (raw analog) are auto-detected and converted to %. Values with a % sign are used directly.</li>
     <li>Close Arduino IDE Serial Monitor before connecting here — only one app can hold the serial port at a time.</li>
     <li>Click <strong>CONNECT ARDUINO</strong>, select your COM/ttyUSB port, and data will stream live.</li>
@@ -379,6 +414,38 @@
   </div>
 </div>
 
+<div class="analysis-row">
+  <div class="card">
+    <div class="card-label">Session analytics (from telemetry)</div>
+    <p style="font-size:10px;color:var(--text3);line-height:1.5;margin-bottom:4px;">
+      Counts and durations are derived from this browser session only: JSON readings (<code>sensorDry</code>, <code>pump</code>, <code>uptimeMs</code>) and pump log lines (<code>Pump ON/OFF | reason=</code>) when the firmware sends them.
+    </p>
+    <div class="analysis-metrics">
+      <div class="stat-item"><div class="stat-label">Completed waterings</div><div class="stat-val neu" id="aCycles">0</div></div>
+      <div class="stat-item"><div class="stat-label">Total pump run (est.)</div><div class="stat-val" id="aPumpTotal">0s</div></div>
+      <div class="stat-item"><div class="stat-label">Last cycle duration</div><div class="stat-val" id="aLastCycle">—</div></div>
+      <div class="stat-item"><div class="stat-label">Since last pump off</div><div class="stat-val" id="aSinceOff">—</div></div>
+      <div class="stat-item"><div class="stat-label">Safety timeouts (log)</div><div class="stat-val" id="aTimeouts">0</div></div>
+      <div class="stat-item"><div class="stat-label">Last stop reason</div><div class="stat-val neu" style="font-size:12px" id="aLastReason">—</div></div>
+      <div class="stat-item"><div class="stat-label">Pump on / sensor WET</div><div class="stat-val" id="aAnomaly">0</div></div>
+      <div class="stat-item"><div class="stat-label">JSON samples (full)</div><div class="stat-val" id="aJsonN">0</div></div>
+      <div class="stat-item"><div class="stat-label">Longest dry spell</div><div class="stat-val" id="aMaxDry">—</div></div>
+      <div class="stat-item"><div class="stat-label">Longest wet spell</div><div class="stat-val" id="aMaxWet">—</div></div>
+      <div class="stat-item"><div class="stat-label">Current dry spell</div><div class="stat-val" id="aCurDry">—</div></div>
+      <div class="stat-item"><div class="stat-label">Board uptime (last)</div><div class="stat-val" id="aUptime">—</div></div>
+    </div>
+    <div class="analysis-foot" id="aFoot"></div>
+  </div>
+  <div class="card">
+    <div class="card-label">Recommendations</div>
+    <p style="font-size:10px;color:var(--text3);line-height:1.5;margin-bottom:4px;">
+      Rules below use only the metrics on the left plus your live moisture % and rates—no external weather or plant database.
+    </p>
+    <ul class="rec-list" id="recList"></ul>
+    <div class="rec-empty" id="recEmpty">Waiting for telemetry…</div>
+  </div>
+</div>
+
 <footer>
   <span>SOIL MOISTURE MONITOR &mdash; Web Serial API &mdash; Chrome / Edge only</span>
   <span id="footerTime">--:--:--</span>
@@ -392,6 +459,275 @@ let zoneCounts = { dry:0, low:0, optimal:0, wet:0, saturated:0 };
 let port = null, reader = null, simInterval = null;
 let simulating = false, connected = false;
 let buffer = '';
+
+let prevPump = null;
+let prevSensorDry = null;
+let prevTs = null;
+let pumpOnSinceTs = null;
+let totalPumpOnMs = 0;
+let completedWateringCycles = 0;
+let lastCycleDurationMs = null;
+let lastPumpOffAtTs = null;
+let lastPumpOffReason = null;
+let safetyTimeoutCount = 0;
+let maxDryStreakMs = 0;
+let maxWetStreakMs = 0;
+let dryStreakStartTs = null;
+let wetStreakStartTs = null;
+let anomalyPumpOnWetSensor = 0;
+let jsonFullSamples = 0;
+let lastUptimeMs = null;
+let lastWallAtProcess = null;
+
+function beginDataSession(_source) {
+  readings = [];
+  timestamps = [];
+  zoneCounts = { dry: 0, low: 0, optimal: 0, wet: 0, saturated: 0 };
+  lastStatus = null;
+  buffer = '';
+  const d = trendChart.data;
+  d.labels = [];
+  d.datasets[0].data = [];
+  trendChart.update('none');
+  document.getElementById('logBox').innerHTML = '';
+  document.getElementById('bigVal').textContent = '--';
+  document.getElementById('bigVal').className = 'big-val';
+  document.getElementById('rawVal').textContent = 'Raw: ---  |  Analog: ---';
+  document.getElementById('deviceMeta').textContent = 'Sensor: --  |  Pump: --  |  Uptime: --';
+  document.getElementById('statusBadge').textContent = '\u25CF AWAITING DATA';
+  document.getElementById('statusBadge').className = 'status-badge badge-idle';
+  document.getElementById('sMin').textContent = '--';
+  document.getElementById('sMax').textContent = '--';
+  document.getElementById('sAvg').textContent = '--';
+  document.getElementById('sCount').textContent = '0';
+  document.getElementById('rateVal').textContent = '-- %/min';
+  document.getElementById('rateVal').style.color = '#8fa690';
+  document.getElementById('trendDir').textContent = 'Collecting data...';
+  document.getElementById('trendMeta').textContent = '— %/min';
+  document.getElementById('evapVal1').textContent = '0.0 %/min';
+  document.getElementById('evapVal5').textContent = '0.0 %/min';
+  document.getElementById('evapVal15').textContent = '0.0 %/min';
+  document.getElementById('evapBar1').style.width = '0%';
+  document.getElementById('evapBar5').style.width = '0%';
+  document.getElementById('evapBar15').style.width = '0%';
+  document.getElementById('timeToDry').textContent = '-- hours';
+  updateZoneChart();
+  resetSessionAnalytics();
+  renderAnalysisPanel(Date.now());
+  addManualLog('INFO', 'New session — charts and analytics cleared.');
+}
+
+function resetSessionAnalytics() {
+  prevPump = null;
+  prevSensorDry = null;
+  prevTs = null;
+  pumpOnSinceTs = null;
+  totalPumpOnMs = 0;
+  completedWateringCycles = 0;
+  lastCycleDurationMs = null;
+  lastPumpOffAtTs = null;
+  lastPumpOffReason = null;
+  safetyTimeoutCount = 0;
+  maxDryStreakMs = 0;
+  maxWetStreakMs = 0;
+  dryStreakStartTs = null;
+  wetStreakStartTs = null;
+  anomalyPumpOnWetSensor = 0;
+  jsonFullSamples = 0;
+  lastUptimeMs = null;
+  lastWallAtProcess = null;
+}
+
+function formatDurationMs(ms) {
+  if (ms === null || ms === undefined || isNaN(ms)) return '—';
+  if (ms < 1000) return ms.toFixed(0) + ' ms';
+  const s = Math.floor(ms / 1000);
+  if (s < 120) return s + 's';
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  if (m < 120) return m + 'm ' + rs + 's';
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return h + 'h ' + rm + 'm';
+}
+
+function parsePumpTelemetryLine(line) {
+  const m = line.match(/Pump\s+(ON|OFF)\s*\|\s*reason=(\w+)/i);
+  if (!m) return false;
+  const edge = m[1].toUpperCase();
+  const reason = m[2].toLowerCase();
+  if (edge === 'OFF') {
+    lastPumpOffReason = reason;
+    lastPumpOffAtTs = Date.now();
+    if (reason === 'safety_timeout') safetyTimeoutCount++;
+  }
+  return true;
+}
+
+function updateFromTelemetry(reading, wallNow) {
+  const { sensorDry, pump, uptimeMs } = reading;
+
+  if (uptimeMs !== null && uptimeMs !== undefined && !isNaN(uptimeMs)) {
+    lastUptimeMs = uptimeMs;
+  }
+
+  const hasJsonActuators = (sensorDry === 0 || sensorDry === 1) && (pump === 0 || pump === 1);
+  if (hasJsonActuators) jsonFullSamples++;
+
+  if (prevTs !== null && prevPump === 1) {
+    totalPumpOnMs += wallNow - prevTs;
+  }
+
+  if (hasJsonActuators) {
+    if (pump === 1 && sensorDry === 0) anomalyPumpOnWetSensor++;
+
+    if (sensorDry === 1) {
+      if (prevSensorDry !== 1) {
+        dryStreakStartTs = wallNow;
+        if (prevSensorDry === 0 && wetStreakStartTs !== null) {
+          maxWetStreakMs = Math.max(maxWetStreakMs, wallNow - wetStreakStartTs);
+        }
+        wetStreakStartTs = null;
+      }
+    } else if (sensorDry === 0) {
+      if (prevSensorDry !== 0) {
+        wetStreakStartTs = wallNow;
+        if (prevSensorDry === 1 && dryStreakStartTs !== null) {
+          maxDryStreakMs = Math.max(maxDryStreakMs, wallNow - dryStreakStartTs);
+        }
+        dryStreakStartTs = null;
+      }
+    }
+  }
+
+  if (pump !== null && prevPump !== null) {
+    if (prevPump === 0 && pump === 1) pumpOnSinceTs = wallNow;
+    if (prevPump === 1 && pump === 0) {
+      if (pumpOnSinceTs !== null) lastCycleDurationMs = wallNow - pumpOnSinceTs;
+      completedWateringCycles++;
+      lastPumpOffAtTs = wallNow;
+      pumpOnSinceTs = null;
+    }
+  } else if (pump !== null && prevPump === null && pump === 1) {
+    pumpOnSinceTs = wallNow;
+  }
+
+  prevPump = pump;
+  prevSensorDry = sensorDry;
+  prevTs = wallNow;
+  lastWallAtProcess = wallNow;
+
+  renderAnalysisPanel(wallNow);
+}
+
+function moistureIsBinarySession() {
+  if (readings.length < 10) return false;
+  for (let i = 0; i < readings.length; i++) {
+    const x = readings[i];
+    if (x > 2 && x < 98) return false;
+  }
+  return true;
+}
+
+function renderAnalysisPanel(wallNow) {
+  document.getElementById('aCycles').textContent = String(completedWateringCycles);
+  document.getElementById('aPumpTotal').textContent = formatDurationMs(totalPumpOnMs);
+  document.getElementById('aLastCycle').textContent = lastCycleDurationMs === null ? '—' : formatDurationMs(lastCycleDurationMs);
+  document.getElementById('aTimeouts').textContent = String(safetyTimeoutCount);
+  document.getElementById('aLastReason').textContent = lastPumpOffReason ? lastPumpOffReason : '—';
+  document.getElementById('aAnomaly').textContent = String(anomalyPumpOnWetSensor);
+  document.getElementById('aJsonN').textContent = String(jsonFullSamples);
+
+  let sinceOff = '—';
+  if (lastPumpOffAtTs !== null) {
+    const d = wallNow - lastPumpOffAtTs;
+    sinceOff = d < 1500 ? 'just now' : formatDurationMs(d) + ' ago';
+  }
+  document.getElementById('aSinceOff').textContent = sinceOff;
+
+  const curDry = dryStreakStartTs !== null ? wallNow - dryStreakStartTs : 0;
+  const curWet = wetStreakStartTs !== null ? wallNow - wetStreakStartTs : 0;
+  const longestDry = Math.max(maxDryStreakMs, curDry);
+  const longestWet = Math.max(maxWetStreakMs, curWet);
+  document.getElementById('aMaxDry').textContent =
+    jsonFullSamples && longestDry > 0 ? formatDurationMs(longestDry) : '—';
+  document.getElementById('aMaxWet').textContent =
+    jsonFullSamples && longestWet > 0 ? formatDurationMs(longestWet) : '—';
+  document.getElementById('aCurDry').textContent = dryStreakStartTs !== null ? formatDurationMs(curDry) : '—';
+
+  document.getElementById('aUptime').textContent =
+    lastUptimeMs !== null ? formatDurationMs(lastUptimeMs) + ' (device)' : '—';
+
+  let foot = '';
+  if (readings.length >= 10 && moistureIsBinarySession()) {
+    foot = 'Notice: moisture % has only been ~0% or ~100% this session—typical of a digital (DO) probe. Zone charts and %/min rates reflect that binary signal, not gradual soil water.';
+  }
+  document.getElementById('aFoot').textContent = foot;
+
+  buildRecommendations(wallNow);
+}
+
+function buildRecommendations(wallNow) {
+  const list = document.getElementById('recList');
+  const empty = document.getElementById('recEmpty');
+  list.innerHTML = '';
+  const items = [];
+
+  if (jsonFullSamples === 0 && readings.length > 0) {
+    items.push({ cls: 'info', text: 'No JSON with sensorDry/pump yet—recommendations that need probe/pump state are limited. Use firmware that prints {"sensorDry", "pump", ...} or keep using moisture % only below.' });
+  }
+
+  if (safetyTimeoutCount > 0) {
+    items.push({ cls: 'warn', text: 'Pump stopped on safety timeout at least once (from serial log). Soil may not be reaching the sensor zone within the max run window—check placement, flow, or firmware MAX_PUMP_RUN_MS.' });
+  }
+  if (anomalyPumpOnWetSensor >= 3) {
+    items.push({ cls: 'err', text: 'Pump was ON while sensorDry reported WET several times—verify wiring, relay polarity (RELAY_ACTIVE_LOW), or SENSOR_DRY_STATE inversion in firmware.' });
+  } else if (anomalyPumpOnWetSensor === 1 || anomalyPumpOnWetSensor === 2) {
+    items.push({ cls: 'warn', text: 'Brief pump-on + wet-sensor samples can happen at transitions; if this keeps climbing, treat it as a wiring/logic check.' });
+  }
+
+  const n = readings.length;
+  if (n >= 20 && jsonFullSamples > 0) {
+    const sessionWallMs = timestamps[n - 1] - timestamps[0];
+    const cph = sessionWallMs > 0 ? completedWateringCycles / (sessionWallMs / 3600000) : 0;
+    if (completedWateringCycles >= 4 && cph > 6) {
+      items.push({ cls: 'warn', text: 'Many completed waterings per hour in this window—probe chatter, small pot volume, or a short PUMP_COOLDOWN_MS can cause rapid cycling.' });
+    }
+  }
+
+  if (jsonFullSamples > 40 && maxDryStreakMs === 0 && maxWetStreakMs > 0 && completedWateringCycles === 0) {
+    items.push({ cls: 'info', text: 'Sensor stayed WET with no completed pump cycles logged—either manual watering only, or pump not wired through this relay.' });
+  }
+
+  const pct = n ? readings[n - 1] : null;
+  if (pct !== null && getStatus(pct) === 'dry') {
+    items.push({ cls: 'err', text: 'Moisture is in the dry band now—if the pump is not running, check cooldown (20 s default in sketch), power, and that the controller sees sensorDry=1 when soil is dry.' });
+  }
+
+  if (n >= 5) {
+    const old5 = readings[n - 5];
+    const dt = (timestamps[n - 1] - timestamps[n - 5]) / 60000;
+    const rate = dt > 0 ? (readings[n - 1] - old5) / dt : 0;
+    if (rate < -0.5) items.push({ cls: 'warn', text: 'Short window moisture is falling quickly (%/min from recent samples)—check drainage, heat, or sensor depth if you expected stable moisture.' });
+    if (rate > 0.5) items.push({ cls: 'info', text: 'Short window moisture is rising quickly—consistent with watering or a wetting front reaching the probe.' });
+  }
+
+  if (items.length === 0 && n === 0) {
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = items.length ? 'none' : 'block';
+  if (!items.length) {
+    empty.textContent = 'No issues flagged from current session rules. Keep collecting data after waterings and pump events for richer tips.';
+    return;
+  }
+  items.forEach(({ cls, text }) => {
+    const li = document.createElement('li');
+    li.className = cls;
+    li.textContent = text;
+    list.appendChild(li);
+  });
+}
 
 const trendCtx = document.getElementById('trendChart').getContext('2d');
 const trendChart = new Chart(trendCtx, {
@@ -510,6 +846,7 @@ function processValue(reading) {
   updateZoneChart();
   updateTrendChart(clampedPct);
   addLog(clampedPct, status, pump);
+  updateFromTelemetry(reading, now);
 }
 
 function updateTrend() {
@@ -634,6 +971,7 @@ async function connect() {
     const baud = parseInt(document.getElementById('baudRate').value);
     await port.open({ baudRate: baud });
     connected = true;
+    beginDataSession('serial');
     setConnState(true);
     readLoop();
   } catch(e) {
@@ -661,6 +999,7 @@ async function readLoop() {
       const lines = buffer.split('\n');
       buffer = lines.pop();
       for (const line of lines) {
+        if (parsePumpTelemetryLine(line)) continue;
         const v = parseLine(line);
         if (v !== null) processValue(v);
       }
@@ -691,6 +1030,7 @@ let simDrift = -0.02;
 function startSim() {
   simulating = true;
   simMoisture = 65;
+  beginDataSession('sim');
   document.getElementById('simBtn').textContent = 'STOP SIM';
   document.getElementById('simBtn').className = 'btn btn-sim active';
   document.getElementById('statusDot').className = 'status-dot simulating';
@@ -736,7 +1076,9 @@ if (!('serial' in navigator)) {
 }
 
 setInterval(() => {
+  const t = Date.now();
   document.getElementById('footerTime').textContent = new Date().toLocaleTimeString();
+  if (readings.length > 0 && lastWallAtProcess !== null) renderAnalysisPanel(t);
 }, 1000);
 
 addManualLog('INFO', 'Dashboard ready. Connect Arduino or use Simulate mode.');
